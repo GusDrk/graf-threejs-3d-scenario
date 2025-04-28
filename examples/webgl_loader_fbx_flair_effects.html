@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>three.js webgl - FBX loader</title>
+  <title>three.js webgl - FBX loader with effects</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
   <link type="text/css" rel="stylesheet" href="main.css">
@@ -9,8 +9,9 @@
 
 <body>
   <div id="info">
-    <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - FBXLoader<br />
-    Character and animation from <a href="https://www.mixamo.com/" target="_blank" rel="noopener">Mixamo</a>
+    <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - FBXLoader with effects<br />
+    Character and animation from <a href="https://www.mixamo.com/" target="_blank" rel="noopener">Mixamo</a><br />
+    Controls: ↑↓ speed | RGBW colors | V wind | ←→ fog density | ASDF fog color
   </div>
 
   <script type="importmap">
@@ -35,7 +36,12 @@
     const textureLoader = new THREE.TextureLoader();
 
     let camera, scene, renderer, stats, object, loader, guiMorphsFolder;
-    let mixer;
+    let mixer, rainParticles, rainGeometry, rainMaterial;
+    let fogColor = new THREE.Color(0xffffff);
+    let fogDensity = 0.02;
+    let rainSpeed = 1;
+    let windStrength = 0;
+    let rainColor = new THREE.Color(0xffffff);
 
     const clock = new THREE.Clock();
 
@@ -56,7 +62,7 @@
 
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x3355aa);
-      scene.fog = new THREE.Fog(0x3355aa, 100, 700);
+      scene.fog = new THREE.FogExp2(fogColor, fogDensity);
 
       // Luces
       const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 5);
@@ -102,6 +108,9 @@
       grid.material.transparent = true;
       scene.add(grid);
 
+      // Crear sistema de partículas para la lluvia (con tamaño aumentado)
+      createRain();
+
       loader = new FBXLoader(manager);
       loadAsset(params.asset);
 
@@ -117,6 +126,7 @@
       controls.update();
 
       window.addEventListener('resize', onWindowResize);
+      window.addEventListener('keydown', onKeyDown);
 
       stats = new Stats();
       container.appendChild(stats.dom);
@@ -151,6 +161,115 @@
       });
     }
 
+    function createRain() {
+      const rainCount = 5000;
+      rainGeometry = new THREE.BufferGeometry();
+      
+      const positions = new Float32Array(rainCount * 3);
+      const sizes = new Float32Array(rainCount);
+      
+      for (let i = 0; i < rainCount; i++) {
+        positions[i * 3] = Math.random() * 1000 - 500;
+        positions[i * 3 + 1] = Math.random() * 500 + 200;
+        positions[i * 3 + 2] = Math.random() * 1000 - 500;
+        
+        // Tamaño aumentado: rango de 1.5 a 3.5 (antes era 0.5 a 2.0)
+        sizes[i] = Math.random() * 2.0 + 1.5;
+      }
+      
+      rainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      rainGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+      
+      rainMaterial = new THREE.PointsMaterial({
+        color: rainColor,
+        // Tamaño base aumentado a 1.2 (antes era 0.5)
+        size: 1.2,
+        transparent: true,
+        opacity: 0.8,
+        sizeAttenuation: true
+      });
+      
+      rainParticles = new THREE.Points(rainGeometry, rainMaterial);
+      scene.add(rainParticles);
+    }
+
+    function updateRain() {
+      const positions = rainGeometry.attributes.position.array;
+      
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i + 1] -= rainSpeed;
+        positions[i] += windStrength;
+        
+        if (positions[i + 1] < -100) {
+          positions[i + 1] = Math.random() * 100 + 400;
+          positions[i] = Math.random() * 1000 - 500;
+          positions[i + 2] = Math.random() * 1000 - 500;
+        }
+      }
+      
+      rainGeometry.attributes.position.needsUpdate = true;
+      rainMaterial.color.set(rainColor);
+    }
+
+    function updateFog() {
+      scene.fog.color.set(fogColor);
+      scene.fog.density = fogDensity;
+    }
+
+    function onKeyDown(event) {
+      // Controles de lluvia
+      if (event.key === 'ArrowUp') {
+        rainSpeed = Math.min(rainSpeed + 0.2, 5);
+        console.log('Rain speed increased to:', rainSpeed);
+      } else if (event.key === 'ArrowDown') {
+        rainSpeed = Math.max(rainSpeed - 0.2, 0.2);
+        console.log('Rain speed decreased to:', rainSpeed);
+      } else if (event.key.toLowerCase() === 'r') {
+        rainColor.set(0xff0000);
+        console.log('Rain color changed to red');
+      } else if (event.key.toLowerCase() === 'g') {
+        rainColor.set(0x00ff00);
+        console.log('Rain color changed to green');
+      } else if (event.key.toLowerCase() === 'b') {
+        rainColor.set(0x0000ff);
+        console.log('Rain color changed to blue');
+      } else if (event.key.toLowerCase() === 'w') {
+        rainColor.set(0xffffff);
+        console.log('Rain color changed to white');
+      } else if (event.key.toLowerCase() === 'v') {
+        windStrength = windStrength === 0 ? 0.5 : windStrength + 0.5;
+        if (windStrength > 2) windStrength = 0;
+        console.log('Wind strength changed to:', windStrength);
+      }
+      
+      // Controles de neblina
+      else if (event.key === 'ArrowLeft') {
+        fogDensity = Math.max(fogDensity - 0.002, 0.001);
+        updateFog();
+        console.log('Fog density decreased to:', fogDensity);
+      } else if (event.key === 'ArrowRight') {
+        fogDensity = Math.min(fogDensity + 0.002, 0.1);
+        updateFog();
+        console.log('Fog density increased to:', fogDensity);
+      } else if (event.key.toLowerCase() === 'a') {
+        fogColor.set(0xff0000);
+        updateFog();
+        console.log('Fog color changed to red');
+      } else if (event.key.toLowerCase() === 's') {
+        fogColor.set(0x00ff00);
+        updateFog();
+        console.log('Fog color changed to green');
+      } else if (event.key.toLowerCase() === 'd') {
+        fogColor.set(0x0000ff);
+        updateFog();
+        console.log('Fog color changed to blue');
+      } else if (event.key.toLowerCase() === 'f') {
+        fogColor.set(0xffffff);
+        updateFog();
+        console.log('Fog color changed to white');
+      }
+    }
+
     function loadAsset(asset) {
       loader.load('models/fbx/' + asset + '.fbx', function (group) {
         if (object) {
@@ -183,9 +302,6 @@
 
         object.traverse(function (child) {
           if (child.isMesh) {
-            // ✅ Material azul con metal y transparencia
-            
-
             child.castShadow = true;
             child.receiveShadow = true;
 
@@ -212,6 +328,7 @@
     function animate() {
       const delta = clock.getDelta();
       if (mixer) mixer.update(delta);
+      updateRain();
       renderer.render(scene, camera);
       stats.update();
     }
